@@ -16,16 +16,38 @@ pub struct Request {
 pub struct Response {
     pub status_code: u16,
     pub body: String,
+    pub content_type: String,
 }
 
 impl Response {
     pub fn to_http(&self) -> String {
         format!(
-            "HTTP/1.1 {} OK\r\nContent-Type: text/plain\r\n\r\n{}",
-            self.status_code, self.body
+            "HTTP/1.1 {} OK\r\nContent-Type: {}\r\n\r\n{}",
+            self.status_code, self.content_type, self.body
         )
     }
 }
+
+fn guess_content_type(path: &str) -> String {
+    if path.ends_with(".html") {
+        "text/html"
+    } else if path.ends_with(".css") {
+        "text/css"
+    } else if path.ends_with(".js") {
+        "application/javascript"
+    } else if path.ends_with(".json") {
+        "application/json"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if path.ends_with(".gif") {
+        "image/gif"
+    } else {
+        "application/octet-stream"
+    }.to_string()
+}
+
 
 #[derive(Clone)]
 pub struct StaticRoute {
@@ -114,6 +136,7 @@ fn handle_connection(
             Response {
                 status_code: 404,
                 body: "404 Not Found".to_string(),
+                content_type: "text/plain".to_string(),
             }
         };
 
@@ -133,14 +156,19 @@ fn serve_static_file(path: &str, static_route: &StaticRoute) -> Response {
     let rel_path = path.trim_start_matches(&static_route.route_prefix);
     let full_path = Path::new(&static_route.directory).join(rel_path);
 
-    match fs::read_to_string(&full_path) {
-        Ok(contents) => Response {
-            status_code: 200,
-            body: contents,
-        },
+    match fs::read(&full_path) {
+        Ok(contents) => {
+            let content_type = guess_content_type(path);
+            Response {
+                status_code: 200,
+                body: String::from_utf8_lossy(&contents).to_string(),
+                content_type,
+            }
+        }
         Err(_) => Response {
             status_code: 404,
             body: format!("404 File Not Found: {}", full_path.display()),
+            content_type: "text/plain".to_string(),
         },
     }
 }
