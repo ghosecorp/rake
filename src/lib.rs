@@ -4,7 +4,6 @@ use std::io::{Read, Write};
 use std::thread;
 use std::path::Path;
 use std::fs;
-
 type HandlerFn = fn(&Request) -> Response;
 
 pub struct Request {
@@ -15,37 +14,40 @@ pub struct Request {
 
 pub struct Response {
     pub status_code: u16,
-    pub body: String,
+    pub body: Vec<u8>,
     pub content_type: String,
 }
 
 impl Response {
-    pub fn to_http(&self) -> String {
-        format!(
-            "HTTP/1.1 {} OK\r\nContent-Type: {}\r\n\r\n{}",
-            self.status_code, self.content_type, self.body
-        )
+    pub fn to_http(&self) -> Vec<u8> {
+        let header = format!(
+            "HTTP/1.1 {} OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n\r\n",
+            self.status_code,
+            self.content_type,
+            self.body.len()
+        );
+
+        let mut response = header.into_bytes();
+        response.extend(&self.body);
+        response
     }
 }
 
-fn guess_content_type(path: &str) -> String {
-    if path.ends_with(".html") {
-        "text/html"
-    } else if path.ends_with(".css") {
-        "text/css"
-    } else if path.ends_with(".js") {
-        "application/javascript"
-    } else if path.ends_with(".json") {
-        "application/json"
-    } else if path.ends_with(".png") {
-        "image/png"
-    } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
-        "image/jpeg"
-    } else if path.ends_with(".gif") {
-        "image/gif"
-    } else {
-        "application/octet-stream"
-    }.to_string()
+
+fn get_mime_type(path: &Path) -> &str {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("html") => "text/html",
+        Some("css") => "text/css",
+        Some("js") => "application/javascript",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("json") => "application/json",
+        Some("pdf") => "application/pdf",
+        Some("txt") => "text/plain",
+        _ => "application/octet-stream", // default for unknown types
+    }
 }
 
 
@@ -135,14 +137,15 @@ fn handle_connection(
         } else {
             Response {
                 status_code: 404,
-                body: "404 Not Found".to_string(),
+                body: "404 Not Found".to_string().into_bytes(),
                 content_type: "text/plain".to_string(),
             }
         };
 
         let http_response = response.to_http();
-        stream.write_all(http_response.as_bytes()).unwrap();
-        stream.flush().unwrap();
+        stream.write_all(&http_response).unwrap();
+        stream.flush().unwrap()
+
     }
 }
 
@@ -158,16 +161,16 @@ fn serve_static_file(path: &str, static_route: &StaticRoute) -> Response {
 
     match fs::read(&full_path) {
         Ok(contents) => {
-            let content_type = guess_content_type(path);
+            let content_type = get_mime_type(&full_path).to_string();
             Response {
                 status_code: 200,
-                body: String::from_utf8_lossy(&contents).to_string(),
+                body: contents,
                 content_type,
             }
         }
         Err(_) => Response {
             status_code: 404,
-            body: format!("404 File Not Found: {}", full_path.display()),
+            body: b"404 File Not Found".to_vec(),
             content_type: "text/plain".to_string(),
         },
     }

@@ -3,7 +3,7 @@ use rake::{SimpleHttpServer, Request, Response};
 fn route_handler(_req: &Request) -> Response {
     Response {
         status_code: 200,
-        body: "This is route".to_string(),
+        body: "This is route".to_string().into_bytes(),
         content_type: "text/plain".to_string(),
     }
 }
@@ -11,7 +11,7 @@ fn route_handler(_req: &Request) -> Response {
 fn hello_handler(_req: &Request) -> Response {
     Response {
         status_code: 200,
-        body: "Hello from /hello".to_string(),
+        body: "Hello from /hello".to_string().into_bytes(),
         content_type: "text/plain".to_string(),
     }
 }
@@ -19,7 +19,7 @@ fn hello_handler(_req: &Request) -> Response {
 fn about_handler(_req: &Request) -> Response {
     Response {
         status_code: 200,
-        body: "This is a custom Rust HTTP server.".to_string(),
+        body: "This is a custom Rust HTTP server.".to_string().into_bytes(),
         content_type: "text/plain".to_string(),
     }
 }
