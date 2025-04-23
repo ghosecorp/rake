@@ -1,7 +1,7 @@
----
 # 🦀 Rake
 
 **Rake** is a blazing-fast, beginner-friendly, zero-dependency **Rust HTTP server library** crafted with ❤️ by **Ghosecorp**.
+...
 
 It enables you to spin up an HTTP server in just a few lines of Rust code — with support for:
 
