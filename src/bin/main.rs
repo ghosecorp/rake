@@ -35,7 +35,11 @@ fn main() {
 
     // Static file serving from ./public when URL starts with /static/
     server.add_static_route("/static/", "public");
-    
+    server.add_static_route("/assets/", "public/assets");
+
+    server.add_file_route("/home", "public/index.html");
+    server.add_file_route("/about", "public/about.html");
+    server.add_file_route("/testingabout", "/home/edwardsepiol/Projects/Rust_Web/rake/public/about.html");
 
     server.start("127.0.0.1:7878");
 }

@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
 use std::thread;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
+
 type HandlerFn = fn(&Request) -> Response;
 
 pub struct Request {
@@ -33,7 +34,6 @@ impl Response {
     }
 }
 
-
 fn get_mime_type(path: &Path) -> &str {
     match path.extension().and_then(|ext| ext.to_str()) {
         Some("html") => "text/html",
@@ -46,10 +46,9 @@ fn get_mime_type(path: &Path) -> &str {
         Some("json") => "application/json",
         Some("pdf") => "application/pdf",
         Some("txt") => "text/plain",
-        _ => "application/octet-stream", // default for unknown types
+        _ => "application/octet-stream",
     }
 }
-
 
 #[derive(Clone)]
 pub struct StaticRoute {
@@ -57,9 +56,16 @@ pub struct StaticRoute {
     pub directory: String,
 }
 
+#[derive(Clone)]
+pub struct FileRoute {
+    pub route: String,
+    pub file_path: PathBuf,
+}
+
 pub struct SimpleHttpServer {
     routes: HashMap<String, HandlerFn>,
     static_routes: Vec<StaticRoute>,
+    file_routes: Vec<FileRoute>,  // <-- NEW
 }
 
 impl SimpleHttpServer {
@@ -67,6 +73,7 @@ impl SimpleHttpServer {
         Self { 
             routes: HashMap::new(),
             static_routes: Vec::new(),
+            file_routes: Vec::new(),
         }
     }
 
@@ -81,6 +88,13 @@ impl SimpleHttpServer {
         });
     }
 
+    pub fn add_file_route(&mut self, route: &str, file_path: &str) {
+        self.file_routes.push(FileRoute {
+            route: route.to_string(),
+            file_path: PathBuf::from(file_path),
+        });
+    }
+
     pub fn start(&self, addr: &str) {
         let listener = TcpListener::bind(addr).expect("Failed to bind to address");
         println!("Listening on {}", addr);
@@ -90,8 +104,9 @@ impl SimpleHttpServer {
                 Ok(stream) => {
                     let routes = self.routes.clone();
                     let static_routes = self.static_routes.clone();
+                    let file_routes = self.file_routes.clone();
                     thread::spawn(move || {
-                        handle_connection(stream, routes, static_routes);
+                        handle_connection(stream, routes, static_routes, file_routes);
                     });
                 }
                 Err(e) => eprintln!("Connection failed: {}", e),
@@ -100,11 +115,11 @@ impl SimpleHttpServer {
     }
 }
 
-
 fn handle_connection(
     mut stream: TcpStream,
     routes: HashMap<String, HandlerFn>,
     static_routes: Vec<StaticRoute>,
+    file_routes: Vec<FileRoute>,
 ) {
     let mut buffer = [0; 1024];
 
@@ -124,28 +139,35 @@ fn handle_connection(
         };
 
         let request = Request {
-            method,
+            method: method.clone(),
             path: path.clone(),
             raw: request_str,
         };
 
-        // Match static route
-        let response = if let Some(static_route) = match_static_route(&path, &static_routes) {
+        let response = if let Some(file_route) = match_file_route(&path, &file_routes) {
+            serve_file(&file_route.file_path)
+        } else if let Some(static_route) = match_static_route(&path, &static_routes) {
             serve_static_file(&path, static_route)
         } else if let Some(handler) = routes.get(&path) {
             handler(&request)
         } else {
             Response {
                 status_code: 404,
-                body: "404 Not Found".to_string().into_bytes(),
+                body: b"404 Not Found".to_vec(),
                 content_type: "text/plain".to_string(),
             }
         };
 
+        println!(
+            "[{}] Request: {} => Status: {}",
+            method,
+            path,
+            response.status_code
+        );
+
         let http_response = response.to_http();
         stream.write_all(&http_response).unwrap();
-        stream.flush().unwrap()
-
+        stream.flush().unwrap();
     }
 }
 
@@ -153,6 +175,12 @@ fn match_static_route<'a>(path: &str, static_routes: &'a [StaticRoute]) -> Optio
     static_routes
         .iter()
         .find(|route| path.starts_with(&route.route_prefix))
+}
+
+fn match_file_route<'a>(path: &str, file_routes: &'a [FileRoute]) -> Option<&'a FileRoute> {
+    file_routes
+        .iter()
+        .find(|route| route.route == path)
 }
 
 fn serve_static_file(path: &str, static_route: &StaticRoute) -> Response {
@@ -171,6 +199,24 @@ fn serve_static_file(path: &str, static_route: &StaticRoute) -> Response {
         Err(_) => Response {
             status_code: 404,
             body: b"404 File Not Found".to_vec(),
+            content_type: "text/plain".to_string(),
+        },
+    }
+}
+
+fn serve_file(path: &PathBuf) -> Response {
+    match fs::read(path) {
+        Ok(contents) => {
+            let content_type = get_mime_type(&path).to_string();
+            Response {
+                status_code: 200,
+                body: contents,
+                content_type,
+            }
+        }
+        Err(_) => Response {
+            status_code: 500,
+            body: b"500 Internal Server Error".to_vec(),
             content_type: "text/plain".to_string(),
         },
     }
