@@ -24,6 +24,19 @@ fn about_handler(_req: &Request) -> Response {
     }
 }
 
+fn json_handler(_req: &Request) -> Response {
+    // Manually creating a JSON response body
+    let json_body = r#"{
+        "content": "hi"
+    }"#;
+
+    Response {
+        status_code: 200,
+        body: json_body.to_string().into_bytes(),
+        content_type: "application/json".to_string(),
+    }
+}
+
 
 fn main() {
     let mut server = SimpleHttpServer::new();
@@ -32,6 +45,10 @@ fn main() {
     server.add_route("/", route_handler);
     server.add_route("/hello", hello_handler);
     server.add_route("/about", about_handler);
+
+    // Add route for JSON response
+    server.add_route("/json", json_handler);
+
 
     // Static file serving from ./public when URL starts with /static/
     server.add_static_route("/static/", "public");
