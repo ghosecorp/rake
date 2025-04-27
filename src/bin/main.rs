@@ -1,62 +1,91 @@
-use rake::{SimpleHttpServer, Request, Response};
+use rake::{SimpleHttpServer, Request, Response, TemplateEngine};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::fs;
 
-fn route_handler(_req: &Request) -> Response {
-    Response {
-        status_code: 200,
-        body: "This is route".to_string().into_bytes(),
-        content_type: "text/plain".to_string(),
+struct SimpleTemplateEngine;
+
+impl SimpleTemplateEngine {
+    pub fn new() -> Self {
+        SimpleTemplateEngine
     }
 }
 
-fn hello_handler(_req: &Request) -> Response {
-    Response {
-        status_code: 200,
-        body: "Hello from /hello".to_string().into_bytes(),
-        content_type: "text/plain".to_string(),
+impl TemplateEngine for SimpleTemplateEngine {
+    // Render from a file path
+    fn render(&self, template_path: &str, context: &HashMap<String, String>) -> String {
+        let html = fs::read_to_string(template_path)
+            .unwrap_or_else(|_| "<h1>Template not found</h1>".to_string());
+        self.render_str(&html, context)
+    }
+
+    // Render from a template string directly
+    fn render_str(&self, template: &str, context: &HashMap<String, String>) -> String {
+        let mut result = template.to_string();
+        for (key, value) in context {
+            // Replace both {{ name }} and {{name}}
+            let placeholder1 = format!("{{{{ {} }}}}", key);
+            let placeholder2 = format!("{{{{{}}}}}", key);
+            result = result.replace(&placeholder1, value);
+            result = result.replace(&placeholder2, value);
+        }
+        result
     }
 }
 
-fn about_handler(_req: &Request) -> Response {
-    Response {
-        status_code: 200,
-        body: "This is a custom Rust HTTP server.".to_string().into_bytes(),
-        content_type: "text/plain".to_string(),
-    }
+// Handler for /hello/<name>
+fn hello_handler(_req: &Request, params: &HashMap<String, String>) -> Response {
+    let default = "world".to_string();
+    let name = params.get("name").unwrap_or(&default);
+    let body = format!("Hello, {}!", name);
+    Response::new(200, body.into_bytes(), "text/plain")
 }
 
-fn json_handler(_req: &Request) -> Response {
-    // Manually creating a JSON response body
-    let json_body = r#"{
-        "content": "hi"
-    }"#;
-
-    Response {
-        status_code: 200,
-        body: json_body.to_string().into_bytes(),
-        content_type: "application/json".to_string(),
-    }
+// Handler for /echo (POST)
+fn echo_handler(req: &Request, _params: &HashMap<String, String>) -> Response {
+    Response::new(200, req.body.clone(), "text/plain")
 }
 
+// Handler for /hello-template-string/<name>
+fn template_string_hello_handler(_req: &Request, params: &HashMap<String, String>) -> Response {
+    let engine = SimpleTemplateEngine::new();
+
+    // Both {{ name }} and {{name}} will work
+    let template = "<html><body>Hello, {{ name }}!</body></html>";
+    let name = params.get("name").cloned().unwrap_or_else(|| "world".to_string());
+
+    let mut context = HashMap::new();
+    context.insert("name".to_string(), name);
+
+    let rendered = engine.render_str(template, &context);
+    Response::new(200, rendered.into_bytes(), "text/html")
+}
+
+// Handler for /hello-template-file/<name>
+fn template_file_hello_handler(_req: &Request, params: &HashMap<String, String>) -> Response {
+    let mut context = HashMap::new();
+    let name = params.get("name").cloned().unwrap_or_else(|| "World".to_string());
+    context.insert("name".to_string(), name);
+
+    let engine = SimpleTemplateEngine::new();
+    let rendered = engine.render("public/hello.html", &context);
+
+    Response::new(200, rendered.into_bytes(), "text/html")
+}
 
 fn main() {
     let mut server = SimpleHttpServer::new();
 
-    // Dynamic routes
-    server.add_route("/", route_handler);
-    server.add_route("/hello", hello_handler);
-    server.add_route("/about", about_handler);
+    server.set_template_engine(Arc::new(SimpleTemplateEngine::new()));
 
-    // Add route for JSON response
-    server.add_route("/json", json_handler);
+    server.route("GET", "/hello/<name>", hello_handler);
+    server.route("POST", "/echo", echo_handler);
 
+    // Serve static files from ./static directory
+    server.static_dir("./static");
 
-    // Static file serving from ./public when URL starts with /static/
-    server.add_static_route("/static/", "public");
-    server.add_static_route("/assets/", "public/assets");
-
-    server.add_file_route("/home", "public/index.html");
-    server.add_file_route("/about", "public/about.html");
-    server.add_file_route("/testingabout", "/home/edwardsepiol/Projects/Rust_Web/rake/public/about.html");
+    server.route("GET", "/hello-template-string/<name>", template_string_hello_handler);
+    server.route("GET", "/hello-template-file/<name>", template_file_hello_handler);
 
     server.start("127.0.0.1:7878");
 }
