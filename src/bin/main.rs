@@ -73,6 +73,13 @@ fn template_file_hello_handler(_req: &Request, params: &HashMap<String, String>)
     Response::new(200, rendered.into_bytes(), "text/html")
 }
 
+fn template_file_about_handler(_req: &Request, _params: &HashMap<String, String>) -> Response {
+    match fs::read("public/about.html") {
+        Ok(contents) => Response::new(200, contents, "text/html"),
+        Err(_) => Response::new(404, b"File not found".to_vec(), "text/plain"),
+    }
+}
+
 fn main() {
     let mut server = SimpleHttpServer::new();
 
@@ -82,7 +89,11 @@ fn main() {
     server.route("POST", "/echo", echo_handler);
 
     // Serve static files from ./static directory
-    server.static_dir("./static");
+    server.static_dir("./public");
+    
+    // server.static_dir("./static/public");
+
+    server.route("GET", "/about/", template_file_about_handler);
 
     server.route("GET", "/hello-template-string/<name>", template_string_hello_handler);
     server.route("GET", "/hello-template-file/<name>", template_file_hello_handler);
