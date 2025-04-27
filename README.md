@@ -1,5 +1,3 @@
----
-
 # 🦀 Rake
 
 **Rake** is a blazing-fast, beginner-friendly, zero-dependency **Rust HTTP server library** developed by **Ghosecorp**.
