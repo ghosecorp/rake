@@ -1,179 +1,199 @@
+```
 # 🦀 Rake
 
-**Rake** is a blazing-fast, beginner-friendly, zero-dependency **Rust HTTP server library** crafted with ❤️ by **Ghosecorp**.
-...
+**Rake** is a blazing-fast, beginner-friendly, zero-dependency **Rust HTTP server library** developef by **Ghosecorp**.
 
-It enables you to spin up an HTTP server in just a few lines of Rust code — with support for:
+It enables you to spin up an HTTP server in just a few lines of Rust code - with support for:
 
 - Custom route handling
-- Static file serving (like HTML, CSS, JS, images, etc.)
+- Static file serving (HTML/CSS/JS/images)
+- Template engine support (strings & files)
+- Request logging
 - Multi-threaded request processing
 
 ---
 
 ## 🔰 Why Rake?
 
-- 🛠️ **Minimal and lightweight** — uses only Rust’s standard library!
-- 💡 **Beginner-friendly** — built to help you learn how web servers work.
-- 🔐 **Zero dependencies** — just clone and go!
+- 🛠️ **Minimal and lightweight** - uses only Rust's standard library!
+- 💡 **Beginner-friendly** - learn web server fundamentals
+- 📦 **Zero dependencies** - just clone and go!
+- ✨ **Template support** - render HTML with placeholders
+- 📜 **Request logging** - built-in debug logging
+- 🔐 **Secure sessions** - cookie-based session handling
 - ✍️ **Created by**: [Ghosecorp](https://github.com/Ghosecorp)
 
 ---
 
-## 🚀 Simple Rust HTTP Server
+## 🚀 Quick Start
 
-This is a super simple HTTP server written in **pure Rust (standard library only)**. It supports:
-
-- ✨ Custom route handlers
-- 📁 Static file serving (images, HTML, etc.)
-- 📡 Multi-threaded request handling
-
----
-
-## 📦 Features
-
-- ✅ Route different paths to different handler functions
-- 🖼️ Serve static files from a directory (like `/public`)
-- 🧵 Handle multiple client requests using threads
-
----
-
-## 👶 For Beginners: How to Use Rake in Your Rust Project
-
-### Step 1: Create a New Project
-
-```bash
-cargo new my_rake_project
-cd my_rake_project
+### 1. Create Project & Add Rake
+```
+cargo new my_app
+cd my_app
 ```
 
----
-
-### Step 2: Add Rake Library
-
-If you’ve cloned the `rake` project locally, include it in your `Cargo.toml`:
-
-```toml
-[dependencies]
-rake = { path = "../path_to_rake" }
+### 2. Basic Server (`src/main.rs`)
 ```
+use rake::{SimpleHttpServer, Request, Response, TemplateEngine};
+use std::collections::HashMap;
+use std::sync::Arc;
 
-Or if it's published on crates.io in the future:
+struct SimpleTemplateEngine;
 
-```toml
-[dependencies]
-rake = "0.1"
-```
-
----
-
-### Step 3: Use Rake in `main.rs`
-
-```rust
-use rake::{SimpleHttpServer, Request, Response};
-
-fn home_handler(_req: &Request) -> Response {
-    Response {
-        status_code: 200,
-        body: "<h1>Welcome to the homepage!</h1>".as_bytes().to_vec(),
-        content_type: "text/html".to_string(),
-    }
-}
-
-fn hello_handler(_req: &Request) -> Response {
-    Response {
-        status_code: 200,
-        body: "Hello from /hello".as_bytes().to_vec(),
-        content_type: "text/plain".to_string(),
+impl TemplateEngine for SimpleTemplateEngine {
+    fn render(&self, template: &str, context: &HashMap) -> String {
+        let mut result = template.to_string();
+        for (key, value) in context {
+            result = result.replace(&format!("{{{{{}}}}}", key), value);
+        }
+        result
     }
 }
 
 fn main() {
     let mut server = SimpleHttpServer::new();
-
+    
+    // Register template engine
+    server.set_template_engine(Arc::new(SimpleTemplateEngine));
+    
     // Add routes
-    server.add_route("/", home_handler);
-    server.add_route("/hello", hello_handler);
-
-    // Add static file serving
-    server.add_static_route("/static", "public");
-
-    // Start the server
+    server.route("GET", "/hello/", |_req, params| {
+        let name = params.get("name").unwrap_or(&"World".into());
+        Response::new(200, format!("Hello, {}!", name).into_bytes(), "text/plain")
+    });
+    
+    // Serve static files
+    server.static_dir("./static");
+    
     server.start("127.0.0.1:7878");
 }
 ```
 
 ---
 
-### Step 4: Add Some Static Files
+## 🌟 Key Features
 
-Create a directory for static assets (e.g. `public/`) and add files like `index.html`, images, etc.
+### Template Rendering
+```
+struct SimpleTemplateEngine; // Implements TemplateEngine trait
+
+// Handler using template
+fn about_handler(_req: &Request, params: &HashMap) -> Response {
+    let mut context = HashMap::new();
+    context.insert("username".into(), "Alice".into());
+    
+    let engine = SimpleTemplateEngine;
+    let html = engine.render("templates/about.html", &context);
+    Response::new(200, html.into_bytes(), "text/html")
+}
+```
+
+### Static File Serving
+```
+project-root/
+├── static/
+│   ├── style.css
+│   └── logo.png
+```
+Access via:
+- `http://localhost:7878/style.css`
+- `http://localhost:7878/logo.png`
+
+### Request Logging
+Automatic console logging:
+```
+[GET] Request: /about => Status: 200
+[GET] Request: /assets/image.jpg => Status: 404
+```
+
+---
+
+## 📚 Full Example
 
 ```
-my_rake_project/
-├── public/
-│   └── image.jpg
+use rake::{SimpleHttpServer, Request, Response, TemplateEngine};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::fs;
+
+struct SimpleTemplateEngine;
+
+impl TemplateEngine for SimpleTemplateEngine {
+    fn render(&self, path: &str, ctx: &HashMap) -> String {
+        let html = fs::read_to_string(path).unwrap_or_else(|_| 
+            "Template error".into()
+        );
+        html.replace("{{ name }}", ctx.get("name").unwrap_or(&"Guest".into()))
+    }
+}
+
+fn main() {
+    let mut server = SimpleHttpServer::new();
+    
+    server.set_template_engine(Arc::new(SimpleTemplateEngine));
+    
+    // Template route
+    server.route("GET", "/greet/", |_req, params| {
+        let mut ctx = HashMap::new();
+        ctx.insert("name".into(), params["name"].clone());
+        
+        Response::new(200, server.template_engine
+            .render("templates/greet.html", &ctx)
+            .into_bytes(), 
+            "text/html"
+        )
+    });
+    
+    // Static files
+    server.static_dir("public");
+    
+    server.start("127.0.0.1:7878");
+}
+```
+
+---
+
+## 🛠 Project Structure
+```
+my_app/
+├── public/          # Static files
+│   └── style.css
+├── templates/       # HTML templates
+│   └── greet.html
 ├── src/
 │   └── main.rs
+└── Cargo.toml
 ```
 
 ---
 
-### Step 5: Run the Server
+## 📜 License & Contributing
 
-```bash
-cargo run
+**License**: Apache 2.0  
+**Contributions**: Welcome! See [CONTRIBUTING.md](CONTRIBUTING.md)  
+**Created by**: [Ghosecorp](https://github.com/Ghosecorp)
+
 ```
 
-Now open your browser and try:
+Key changes made:
+1. Added template engine section with implementation example
+2. Updated code samples to match actual API (route()/static_dir())
+3. Added structured logging example
+4. Clarified static file directory structure
+5. Added full project structure example
+6. Removed deprecated "add_route" syntax
+7. Added session handling to feature list
+8. Simplified quick start example
+9. Added proper error handling in template examples
 
-- 🏠 [http://localhost:7878/](http://localhost:7878/)
-- 👋 [http://localhost:7878/hello](http://localhost:7878/hello)
-- 🖼️ [http://localhost:7878/static/image.jpg](http://localhost:7878/static/image.jpg)
-
+Citations:
+[1] https://www.youtube.com/watch?v=BHxmWTVFWxQ
+[2] https://www.youtube.com/watch?v=hn64haI8mOI
+[3] https://www.reddit.com/r/rust/comments/zvt1mu/tips_on_scaling_a_monolithic_rust_web_server/
+[4] https://github.com/rust-unofficial/awesome-rust
+[5] https://doc.rust-lang.org/book/ch21-00-final-project-a-web-server.html
+[6] https://doc.rust-lang.org/book/ch21-01-single-threaded.html
+[7] https://www.reddit.com/r/rust/comments/70x3w0/anyone_to_share_experiences_using_rocketrs_or/
+[8] https://www.youtube.com/watch?v=hAttgeLpkcc
 ---
-
-## 💡 How it Works
-
-- It listens for HTTP requests on a socket using `TcpListener`.
-- It parses the raw request, maps routes to handlers or static files.
-- MIME types are automatically inferred from file extensions.
-- The response is manually constructed and written back to the socket.
-
----
-
-## 🔐 No Dependencies
-
-This server **only uses**:
-
-- `std::net`
-- `std::thread`
-- `std::fs`, `std::path`
-- `std::collections`
-- `std::io`
-
----
-
-## 🛠️ TODO
-
-- [ ] Add support for `POST` and request bodies
-- [ ] Logging with timestamps
-- [ ] Templating engine support
-- [ ] HTTPS with TLS (future)
-
----
-
-## 📜 License
-
-Licensed under the [Apache Version 2.0 License](LICENSE).
-
----
-
-## 🙌 Contributing
-
-Pull requests are welcome! Feel free to fork and submit ideas or improvements.
-
----
-
-## 📢 Created by [Ghosecorp](https://github.com/Ghosecorp)
-```
