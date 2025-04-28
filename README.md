@@ -6,7 +6,7 @@ It enables you to spin up an HTTP server in just a few lines of Rust code, with 
 
 - Custom route handling
 - Static file serving (HTML/CSS/JS/images)
-- Template engine support (strings & files)
+- Template engine support (both strings & files)
 - Request logging
 - Multi-threaded request processing
 
@@ -17,7 +17,7 @@ It enables you to spin up an HTTP server in just a few lines of Rust code, with 
 - 🛠️ **Minimal and lightweight** — uses only Rust's standard library!
 - 💡 **Beginner-friendly** — learn web server fundamentals
 - 📦 **Zero dependencies** — just clone and go!
-- ✨ **Template support** — render HTML with placeholders
+- ✨ **Template support** — render HTML templates from **strings or files**
 - 📜 **Request logging** — built-in debug logging
 - 🔐 **Secure sessions** — cookie-based session handling
 - ✍️ **Created by**: [Ghosecorp](https://github.com/Ghosecorp)
@@ -53,18 +53,15 @@ impl TemplateEngine for SimpleTemplateEngine {
 fn main() {
     let mut server = SimpleHttpServer::new();
     
-    // Register template engine
     server.set_template_engine(Arc::new(SimpleTemplateEngine));
     
-    // Add routes
     server.route("GET", "/hello/", |_req, params| {
         let name = params.get("name").unwrap_or(&"World".into());
         Response::new(200, format!("Hello, {}!", name).into_bytes(), "text/plain")
     });
-    
-    // Serve static files
+
     server.static_dir("./static");
-    
+
     server.start("127.0.0.1:7878");
 }
 ```
@@ -74,16 +71,70 @@ fn main() {
 ## 🌟 Key Features
 
 ### ✅ Template Rendering
-```rust
-struct SimpleTemplateEngine; // Implements TemplateEngine trait
 
-fn about_handler(_req: &Request, params: &HashMap<String, String>) -> Response {
+Templates can be rendered **from files** or **directly from string literals**!
+
+---
+
+### 🔥 Using Template from a String
+If you don't want to create a separate HTML file, you can use inline templates:
+
+```rust
+use rake::{SimpleHttpServer, Request, Response, TemplateEngine};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+struct SimpleTemplateEngine;
+
+impl SimpleTemplateEngine {
+    pub fn new() -> Self {
+        SimpleTemplateEngine
+    }
+}
+
+impl TemplateEngine for SimpleTemplateEngine {
+    fn render(&self, template: &str, context: &HashMap<String, String>) -> String {
+        let mut result = template.to_string();
+        for (key, value) in context {
+            let placeholder1 = format!("{{{{ {} }}}}", key);
+            let placeholder2 = format!("{{{{{}}}}}", key);
+            result = result.replace(&placeholder1, value);
+            result = result.replace(&placeholder2, value);
+        }
+        result
+    }
+}
+
+fn template_string_hello_handler(_req: &Request, params: &HashMap<String, String>) -> Response {
+    let engine = SimpleTemplateEngine::new();
+
+    let template = "<html><body>Hello, {{ name }}!</body></html>";
+    let name = params.get("name").cloned().unwrap_or_else(|| "World".to_string());
+
     let mut context = HashMap::new();
-    context.insert("username".into(), "Alice".into());
-    
-    let engine = SimpleTemplateEngine;
-    let html = engine.render("templates/about.html", &context);
-    Response::new(200, html.into_bytes(), "text/html")
+    context.insert("name".to_string(), name);
+
+    let rendered = engine.render(template, &context);
+    Response::new(200, rendered.into_bytes(), "text/html")
+}
+```
+
+---
+
+### 🔥 Using Template from a File
+
+If you prefer managing HTML separately:
+
+```rust
+fn template_file_hello_handler(_req: &Request, params: &HashMap<String, String>) -> Response {
+    let mut context = HashMap::new();
+    let name = params.get("name").cloned().unwrap_or_else(|| "World".to_string());
+    context.insert("name".to_string(), name);
+
+    let engine = SimpleTemplateEngine::new();
+    let rendered = engine.render("public/hello.html", &context);
+
+    Response::new(200, rendered.into_bytes(), "text/html")
 }
 ```
 
@@ -107,7 +158,7 @@ Access via:
 
 ### ✅ Request Logging
 
-Automatic console logging:
+Automatic console output:
 
 ```text
 [GET] Request: /about => Status: 200
@@ -126,35 +177,74 @@ use std::fs;
 
 struct SimpleTemplateEngine;
 
-impl TemplateEngine for SimpleTemplateEngine {
-    fn render(&self, path: &str, ctx: &HashMap<String, String>) -> String {
-        let html = fs::read_to_string(path).unwrap_or_else(|_| 
-            "Template error".into()
-        );
-        html.replace("{{ name }}", ctx.get("name").unwrap_or(&"Guest".into()))
+impl SimpleTemplateEngine {
+    pub fn new() -> Self {
+        SimpleTemplateEngine
     }
+}
+
+impl TemplateEngine for SimpleTemplateEngine {
+    fn render(&self, template: &str, context: &HashMap<String, String>) -> String {
+        let mut result = template.to_string();
+        for (key, value) in context {
+            let placeholder1 = format!("{{{{ {} }}}}", key);
+            let placeholder2 = format!("{{{{{}}}}}", key);
+            result = result.replace(&placeholder1, value);
+            result = result.replace(&placeholder2, value);
+        }
+        result
+    }
+}
+
+fn hello_handler(_req: &Request, params: &HashMap<String, String>) -> Response {
+    let default = "World".to_string();
+    let name = params.get("name").unwrap_or(&default);
+    let body = format!("Hello, {}!", name);
+    Response::new(200, body.into_bytes(), "text/plain")
+}
+
+fn template_file_about_handler(_req: &Request, _params: &HashMap<String, String>) -> Response {
+    match fs::read("public/about.html") {
+        Ok(contents) => Response::new(200, contents, "text/html"),
+        Err(_) => Response::new(404, b"File not found".to_vec(), "text/plain"),
+    }
+}
+
+fn template_string_hello_handler(_req: &Request, params: &HashMap<String, String>) -> Response {
+    let engine = SimpleTemplateEngine::new();
+    let template = "<html><body>Hello, {{ name }}!</body></html>";
+
+    let mut context = HashMap::new();
+    let name = params.get("name").cloned().unwrap_or_else(|| "World".to_string());
+    context.insert("name".to_string(), name);
+
+    let rendered = engine.render(template, &context);
+    Response::new(200, rendered.into_bytes(), "text/html")
+}
+
+fn template_file_hello_handler(_req: &Request, params: &HashMap<String, String>) -> Response {
+    let mut context = HashMap::new();
+    let name = params.get("name").cloned().unwrap_or_else(|| "World".to_string());
+    context.insert("name".to_string(), name);
+
+    let engine = SimpleTemplateEngine::new();
+    let rendered = engine.render("public/hello.html", &context);
+
+    Response::new(200, rendered.into_bytes(), "text/html")
 }
 
 fn main() {
     let mut server = SimpleHttpServer::new();
-    
-    server.set_template_engine(Arc::new(SimpleTemplateEngine));
-    
-    // Template route
-    server.route("GET", "/greet/", |_req, params| {
-        let mut ctx = HashMap::new();
-        ctx.insert("name".into(), params.get("name").cloned().unwrap_or_else(|| "Guest".into()));
-        
-        Response::new(
-            200,
-            server.template_engine.render("templates/greet.html", &ctx).into_bytes(),
-            "text/html"
-        )
-    });
-    
-    // Static files
-    server.static_dir("public");
-    
+
+    server.set_template_engine(Arc::new(SimpleTemplateEngine::new()));
+
+    server.route("GET", "/hello/<name>", hello_handler);
+    server.route("GET", "/about/", template_file_about_handler);
+    server.route("GET", "/hello-template-string/<name>", template_string_hello_handler);
+    server.route("GET", "/hello-template-file/<name>", template_file_hello_handler);
+
+    server.static_dir("./public");
+
     server.start("127.0.0.1:7878");
 }
 ```
@@ -165,10 +255,10 @@ fn main() {
 
 ```
 my_app/
-├── public/          # Static files
+├── public/          # Static files & HTML templates
+│   ├── hello.html
+│   ├── about.html
 │   └── style.css
-├── templates/       # HTML templates
-│   └── greet.html
 ├── src/
 │   └── main.rs
 └── Cargo.toml
@@ -185,9 +275,10 @@ my_app/
 ---
 
 ## 📖 Citations
-- [The Rust Book (Chapter 20-21)](https://doc.rust-lang.org/book/ch20-00-final-project-a-web-server.html)
+
+- [The Rust Book (Chapters 20-21)](https://doc.rust-lang.org/book/ch20-00-final-project-a-web-server.html)
 - [Awesome Rust Web Servers](https://github.com/rust-unofficial/awesome-rust#web-servers)
-- [Scaling Monolithic Rust Servers](https://www.reddit.com/r/rust/comments/zvt1mu/tips_on_scaling_a_monolithic_rust_web_server/)
+- [Scaling Monolithic Rust Servers (Reddit)](https://www.reddit.com/r/rust/comments/zvt1mu/tips_on_scaling_a_monolithic_rust_web_server/)
 - [YouTube - Rust Web Server Basics](https://www.youtube.com/watch?v=BHxmWTVFWxQ)
 
 ---
